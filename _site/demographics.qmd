@@ -32,7 +32,6 @@ pacman::p_load(knitr, tidyverse, rmarkdown, openxlsx, shiny, rvest)
 source(here::here("utils.R"))
 source(here::here("party_utils.R"))
 
-sets <- list(cntry = "NL")
 
 # election_dat30 %>% count(party)
 ```

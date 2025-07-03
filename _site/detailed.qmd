@@ -48,7 +48,6 @@ color_dat <- color_dat %>%
 
 color_dat <- distinct(color_dat, party, .keep_all = TRUE) %>% drop_na()
 
-sets <- list(cntry = "NL")
 
 ```
 

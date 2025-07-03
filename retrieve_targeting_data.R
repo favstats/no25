@@ -18,7 +18,7 @@ if(!("metatargetr" %in% inspck)){
   remotes::install_github('favstats/metatargetr')
 }
 
-thecntry <- "NL"
+thecntry <- "NO"
 
 
 thepkgs <-  installed.packages() %>% as_tibble() %>% pull(Package)
@@ -288,7 +288,8 @@ try({
   headers <- add_headers(
     accept = "application/json",
     `accept-language` = "en-US,en;q=0.9,de-DE;q=0.8,de;q=0.7,nl;q=0.6,it;q=0.5,sv;q=0.4,is;q=0.3",
-    authorization = paste("Bearer", token),
+    # authorization = paste("Bearer", token),
+    `x-access-token` = token ,
     `content-type` = "application/json",
     priority = "u=1, i",
     `sec-ch-ua` = '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
@@ -687,154 +688,6 @@ if (!exists("last7")) {
 }
 
 
-# last7 %>% 
-#   select(-party) %>% 
-#   left_join(wtm_data %>% select(-page_name)) %>% 
-#   mutate(amount_spent_ron = parse_number(amount_spent_ron)) %>% 
-#   arrange(desc(amount_spent_ron)) %>% 
-#   select(page_id, page_name, disclaimer, amount_spent_ron, party) %>% 
-#   mutate(cntry = thecntry) %>% 
-#   mutate(link_ad_library = glue::glue("https://www.facebook.com/ads/library/?active_status=all&ad_type=political_and_issue_ads&country={cntry}&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=relevancy_monthly_grouped&view_all_page_id={page_id}")) %>% 
-#   mutate(link_fb_page = glue::glue("https://www.facebook.com/{page_id}")) %>% 
-#   select(-cntry) %>% 
-#   openxlsx::write.xlsx("romania.xlsx")
-# 
-# ggl_dat_crea <- vroom::vroom("data/google-political-ads-creative-stats.csv")
-# 
-# ggl_dat <- read_csv("data/google-political-ads-advertiser-weekly-spend.csv")
-# ggl_dat_crea %>% slice(1:10) %>% View()
-# 
-# 
-# ggl_dat_crea %>% 
-#   filter(str_detect(Regions, thecntry)) %>% 
-#   filter(Date_Range_Start >= as.Date("2024-11-01")) %>% 
-#   group_by(Advertiser_ID, Advertiser_Name) %>% 
-#   summarize(Spend_Range_Min_RON = sum(Spend_Range_Min_RON)) %>% 
-#   arrange(desc(Spend_Range_Min_RON)) %>% 
-#   mutate(cntry = thecntry) %>% 
-#   mutate(ggl_link = glue::glue("https://adstransparency.google.com/advertiser/{Advertiser_ID}?region={cntry}&topic=political&preset-date=Last+30+days")) %>% 
-#   select(-cntry) %>% 
-#   openxlsx::write.xlsx("ggl_romania.xlsx")
-#   
-# sc <- read_csv("data/PoliticalAds.csv")
-#   
-# sc %>% View()
-
-# 269089752708
-
-
-
-# the_data <- arrow::read_parquet(glue::glue("https://github.com/favstats/meta_ad_targeting/releases/download/DE-last_7_days/2024-11-27.parquet"))  %>%
-#   select(-page_name, -party, -remove_em)
-# 
-# the_data %>% #View()
-#   filter(page_id == "269089752708")
-
-
-# the_data <- arrow::read_parquet(glue::glue("https://github.com/favstats/meta_ad_targeting/releases/download/DE-last_7_days/2024-12-02.parquet"))  %>% 
-#   select(-page_name, -party, -remove_em) %>% 
-#   left_join(all_dat  ) %>% 
-#   mutate(tframe = parse_number(as.character("last_7_days"))) %>%
-#   mutate(total_spend_formatted = parse_number(as.character(total_spend_formatted)))
-# 
-# 
-# present_dat <- the_data %>% 
-#   drop_na(party) %>% 
-#   filter(is.na(no_data)) %>% 
-#   distinct(page_id, .keep_all = T)
-# 
-# last7 %>% 
-#   anti_join(present_dat %>% select(page_id)) %>% 
-#   slice(1) %>% 
-#   pull(page_id) %>%
-#   as_tibble()
-# # select(-page_name, -party, -remove_em)
-# 
-# get_page_insights("380605622501418", timeframe = "last_7_days", include_info = "targeting_info")  %>%
-#   # mutate(page_id = as.character(page_id)) %>% 
-#   left_join(all_dat) %>%
-#   mutate(tframe = parse_number(as.character("last_7_days"))) %>%
-#   mutate(total_spend_formatted = parse_number(as.character(total_spend_formatted)))
-
-
-
-
-# mark_list <- us_markers %>% 
-#   mutate(tframe = fct_relevel(tframe, c("last_7_days",
-#                                         "last_30_days"))) %>% 
-#   arrange(tframe) %>% 
-#   filter(str_detect(tframe, "90_days", negate =T)) %>% 
-#   # filter(str_detect(tframe, "30_days", negate =T)) %>% 
-#   
-#   # slice(1) %>%
-#   # sample_n(10) %>% 
-#   # mutate(ds = as.Date(ds)) %>% 
-#   split(1:nrow(.)) %>% 
-#   map(~{
-#     thetframe <- .x$tframe
-#     the_data <- arrow::read_parquet(glue::glue("https://github.com/favstats/meta_ad_targeting/releases/download/{thecntry}-{.x$tframe}/{.x$ds}.parquet"))  %>% 
-#       select(-page_name, -party, -remove_em) %>% 
-#       left_join(all_dat  ) %>% 
-#       mutate(tframe = parse_number(as.character(.x$tframe))) %>%
-#       mutate(total_spend_formatted = parse_number(as.character(total_spend_formatted)))
-#     
-#     the_data <- the_data %>% 
-#       filter(is.na(no_data))
-#     
-#     arethesepagespresent <<- the_data %>% 
-#       filter(page_id %in% unique(last7$page_id)[1:1000])
-#     
-#     # if(length(unique(arethesepagespresent$page_id))<1000){
-#     #   try({
-#     # 
-#     #     print("djt not found")
-#     #     djt_page <<- unique(last7$page_id) %>%
-#     #       setdiff(the_data$page_id) %>%
-#     #       # djt_page <<- "380605622501418" %>%
-#     #       map_dfr_progress(
-#     #         ~{get_page_insights(.x, timeframe = thetframe, include_info = "targeting_info")},
-#     #         .progress = T
-#     #       ) %>%
-#     #       as_tibble() %>%
-#     #       # select(-page_name, -party, -remove_em) %>%
-#     #       left_join(all_dat) %>%
-#     #       mutate(tframe = parse_number(as.character(.x$tframe))) %>%
-#     #       mutate(total_spend_formatted = parse_number(as.character(total_spend_formatted)))
-#     # 
-#     #     the_data <- djt_page %>%
-#     #       bind_rows(the_data)
-#     # 
-#     #     present_now <- the_data %>%
-#     #       inner_join(arethesepagespresent %>% select(page_id)) %>%
-#     #       distinct(page_id)
-#     # 
-#     #     print(nrow(present_now))
-#     #   })
-#     # }
-#     
-#     
-#     
-#     
-#     return(the_data)
-#   }) 
-
-# mark_list[[1]] %>% 
-#   filter(page_id == "380605622501418")
-# 
-# mark_list[[2]] %>% 
-#   filter(page_id == "380605622501418")
-# 
-# the_data %>% 
-#   filter(page_id == "380605622501418")
-
-# get_page_insights("153080620724", timeframe = "LAST_30_DAYS", include_info = "targeting_info") %>%
-#   as_tibble()
-# 
-# da7 <- mark_list[[1]]
-# da30 <- mark_list[[2]]
-# da90 <- mark_list[[3]]
-# 
-# da7 %>%  filter(page_id == "153080620724")
 da30 <- metatargetr::get_targeting_db(thecntry, 30, new_ds) 
 da7 <- metatargetr::get_targeting_db(thecntry, 7, new_ds) 
 

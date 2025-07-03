@@ -47,7 +47,6 @@ color_dat <- color_dat %>%
     T ~ colors
   ))
 
-sets <- list(cntry = "NL")
 
 ```
 
