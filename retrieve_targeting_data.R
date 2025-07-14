@@ -726,11 +726,29 @@ safe_get_targeting_db <- function(country,
 da30 <- safe_get_targeting_db(thecntry, 30, as.Date(new_ds))
 da7 <- safe_get_targeting_db(thecntry, 7, as.Date(new_ds))
 
-# da30 %>% filter(page_id == "220942375077886")
+pacman::p_load(cli, janitor, vroom)
+thecntry <- "NO"
+new_ds <- "2025-07-11"
+last7 <- metatargetr::get_ad_report(country = thecntry, timeframe = "last_7_days", date = new_ds)
+last30 <- metatargetr::get_ad_report(country = thecntry, timeframe = "last_30_days", date = new_ds)
+
+options(scipen = 999)
+those_are_missing_30 <- setdiff(last30$page_id, da30$page_id)
+those_are_missing_7 <- setdiff(last7$page_id, da7$page_id)
+
+da30_2 <- those_are_missing_30 %>% 
+  map_dfr(~{
+    metatargetr::get_targeting(.x, "LAST_30_DAYS")
+  }, .progress = T)
+
+da7_2 <- those_are_missing_7 %>% 
+  map_dfr(~{
+    metatargetr::get_targeting(.x, "LAST_7_DAYS")
+  }, .progress = T)
 
 # saveRDS(da90, "data/election_dat90.rds")
-saveRDS(da30, "data/election_dat30.rds")
-saveRDS(da7, "data/election_dat7.rds")
+saveRDS(da30 %>% bind_rows(da30_2), "data/election_dat30.rds")
+saveRDS(da7 %>% bind_rows(da7_2), "data/election_dat7.rds")
 
 # saveRDS(da90, paste0("historic/", new_ds, "/90.rds"))
 # saveRDS(da30, paste0("historic/", new_ds, "/30.rds"))

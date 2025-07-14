@@ -246,3 +246,6 @@ if (Sys.info()[["effective_user"]] == "favstats" | Sys.info()[["effective_user"]
   gert::git_push(force = T)
 }
 
+
+# no <- metatargetr::get_targeting_db("NO", "30", "2025-07-11")
+# no %>% View()
