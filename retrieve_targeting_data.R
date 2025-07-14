@@ -239,7 +239,14 @@ if (Sys.info()[["effective_user"]] == "favstats" | Sys.info()[["effective_user"]
   tf <- "30"
 }
 
-jb <- get_page_insights("103875099042033", timeframe = glue::glue("LAST_90_DAYS"), include_info = "targeting_info") %>% as_tibble()
+if(thecntry == "NO"){
+  jb <- get_page_insights("14095969045", timeframe = glue::glue("LAST_90_DAYS"), include_info = "targeting_info") %>% as_tibble()
+  
+} else {
+  jb <- get_page_insights("103875099042033", timeframe = glue::glue("LAST_90_DAYS"), include_info = "targeting_info") %>% as_tibble()
+  
+}
+
 
 new_ds <- jb %>% arrange(ds) %>% slice(1) %>% pull(ds)
 
@@ -687,9 +694,37 @@ if (!exists("last7")) {
   last7 <- tibble()
 }
 
+safe_get_targeting_db <- function(country,
+                                  days      = 30,
+                                  ds_start  = Sys.Date(),   # e.g. new_ds
+                                  max_back  = 14) {         # stop after 14 failures
+  for (i in 0:max_back) {
+    ds_try <- ds_start - i
+    
+    out <- tryCatch(
+      metatargetr::get_targeting_db(country, days, ds_try),
+      error = function(e) {
+        # Only swallow “does not exist / 404” errors – everything else should still abort
+        if (grepl("(404 Not Found|cannot open URL)", e$message)) return(NULL)
+        stop(e)        # re-throw unknown errors
+      }
+    )
+    
+    if (!is.null(out)) {
+      message(sprintf("✓ Using dataset for %s", ds_try))
+      return(out)
+    }
+  }
+  
+  stop(sprintf(
+    "No dataset available between %s and %s",
+    ds_start, ds_start - max_back
+  ))
+}
 
-da30 <- metatargetr::get_targeting_db(thecntry, 30, new_ds) 
-da7 <- metatargetr::get_targeting_db(thecntry, 7, new_ds) 
+
+da30 <- safe_get_targeting_db(thecntry, 30, as.Date(new_ds))
+da7 <- safe_get_targeting_db(thecntry, 7, as.Date(new_ds))
 
 # da30 %>% filter(page_id == "220942375077886")
 
