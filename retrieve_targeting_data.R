@@ -729,26 +729,41 @@ da7 <- safe_get_targeting_db(thecntry, 7, as.Date(new_ds))
 pacman::p_load(cli, janitor, vroom)
 thecntry <- "NO"
 new_ds <- "2025-07-11"
-last7 <- metatargetr::get_ad_report(country = thecntry, timeframe = "last_7_days", date = new_ds)
-last30 <- metatargetr::get_ad_report(country = thecntry, timeframe = "last_30_days", date = new_ds)
+# last7 <- metatargetr::get_ad_report(country = thecntry, timeframe = "last_7_days", date = new_ds)
+# last30 <- metatargetr::get_ad_report(country = thecntry, timeframe = "last_30_days", date = new_ds)
+# # da30 <- da30 %>% bind_rows_chr(da30_2)
+# options(scipen = 999)
+# those_are_missing_30 <- setdiff(last30$page_id, da30$page_id)
+# those_are_missing_7 <- setdiff(last7$page_id, da7$page_id)
+# 
+# da30_3 <- those_are_missing_30 %>% 
+#   map_dfr(~{
+#     metatargetr::get_targeting(.x, "LAST_30_DAYS")
+#   }, .progress = T)
+# 
+# da7_2 <- those_are_missing_7 %>% 
+#   map_dfr(~{
+#     metatargetr::get_targeting(.x, "LAST_7_DAYS")
+#   }, .progress = T)
 
-options(scipen = 999)
-those_are_missing_30 <- setdiff(last30$page_id, da30$page_id)
-those_are_missing_7 <- setdiff(last7$page_id, da7$page_id)
-
-da30_2 <- those_are_missing_30 %>% 
-  map_dfr(~{
-    metatargetr::get_targeting(.x, "LAST_30_DAYS")
-  }, .progress = T)
-
-da7_2 <- those_are_missing_7 %>% 
-  map_dfr(~{
-    metatargetr::get_targeting(.x, "LAST_7_DAYS")
-  }, .progress = T)
-
-# saveRDS(da90, "data/election_dat90.rds")
-saveRDS(da30 %>% bind_rows(da30_2), "data/election_dat30.rds")
-saveRDS(da7 %>% bind_rows(da7_2), "data/election_dat7.rds")
+bind_rows_chr <- function(...) {
+  dfs <- list(...)
+  if (length(dfs) == 1L && is.list(dfs[[1L]]) && !inherits(dfs[[1L]], "data.frame")) {
+    dfs <- dfs[[1L]]          # support a single list argument
+  }
+  
+  dfs_chr <- lapply(
+    dfs,
+    \(df) dplyr::mutate(across(everything(), as.character), .data = df)
+  )
+  
+  dplyr::bind_rows(dfs_chr)
+}
+# 
+# 
+# # saveRDS(da90, "data/election_dat90.rds")
+# saveRDS(da30 %>% bind_rows_chr(da30_2), "data/election_dat30.rds")
+# saveRDS(da7  %>% bind_rows_chr(da7_2), "data/election_dat7.rds")
 
 # saveRDS(da90, paste0("historic/", new_ds, "/90.rds"))
 # saveRDS(da30, paste0("historic/", new_ds, "/30.rds"))
@@ -756,3 +771,76 @@ saveRDS(da7 %>% bind_rows(da7_2), "data/election_dat7.rds")
 
 # list(da7, da30, da90) %>%
 #   walk(combine_em)
+
+
+
+#' Retrieve a complete targeting DB – guarantees all IDs present
+#'
+#' @param country   ISO-2 country code, e.g. "NO".
+#' @param timeframe "last_7_days" or "last_30_days".
+#' @param ds_start  Reference date (as.Date or "YYYY-MM-DD").
+#' @param max_back  How many days to step back when the parquet is missing.
+#' @param max_rounds Quit after this many refill rounds (safety valve).
+#' @param pause     Seconds to wait between single-ID calls (API courtesy).
+#' @return Tibble containing *every* ID that appears in the ad-report.
+get_complete_targeting_db <- function(country,
+                                      timeframe  = c("last_7_days", "last_30_days"),
+                                      ds_start   = Sys.Date(),
+                                      max_back   = 14,
+                                      max_rounds = 5,
+                                      pause      = 0.3,
+                                      stop_on_incomplete = FALSE) {
+  
+  timeframe  <- match.arg(timeframe)
+  days       <- ifelse(timeframe == "last_7_days", 7, 30)
+  ds_start   <- as.Date(ds_start)
+  
+  db <- safe_get_targeting_db(country, days, ds_start, max_back = max_back)
+  ad_report <- metatargetr::get_ad_report(country, timeframe, ds_start)
+  
+  round <- 1
+  repeat {
+    missing <- setdiff(ad_report$page_id, db$page_id)
+    if (length(missing) == 0) break
+    
+    if (round > max_rounds) {
+      msg <- glue::glue(
+        "Still {length(missing)} IDs missing after {max_rounds} rounds.")
+      if (stop_on_incomplete) {
+        cli::cli_abort(msg)
+      } else {
+        cli::cli_warn(msg)
+        attr(db, "missing_ids") <- missing   # save for later inspection
+        break
+      }
+    }
+    
+    cli::cli_alert_info("Round {round}: fetching {length(missing)} missing IDs …")
+    
+    newly <- purrr::map_dfr(
+      missing,
+      \(id) {
+        Sys.sleep(pause)
+        tryCatch(
+          metatargetr::get_targeting(id, toupper(timeframe)),
+          error = \(e) NULL      # skip IDs that still fail
+        )
+      }
+    )
+    
+    db    <- bind_rows_chr(db, newly)
+    round <- round + 1
+  }
+  
+  db
+}
+
+
+# thecntry <- "NO"
+# new_ds   <- "2025-07-11"
+
+da7  <- get_complete_targeting_db(thecntry, "last_7_days",  new_ds)
+da30 <- get_complete_targeting_db(thecntry, "last_30_days", new_ds)
+
+saveRDS(da30, "data/election_dat30.rds")
+saveRDS(da7,  "data/election_dat7.rds")
