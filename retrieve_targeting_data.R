@@ -18,6 +18,8 @@ if(!("metatargetr" %in% inspck)){
   remotes::install_github('favstats/metatargetr')
 }
 
+source("https://raw.githubusercontent.com/favstats/metatargetr/refs/heads/master/R/get_ad_report.R")
+
 thecntry <- "NO"
 
 
@@ -727,8 +729,8 @@ da30 <- safe_get_targeting_db(thecntry, 30, as.Date(new_ds))
 da7 <- safe_get_targeting_db(thecntry, 7, as.Date(new_ds))
 
 pacman::p_load(cli, janitor, vroom)
-thecntry <- "NO"
-new_ds <- "2025-07-11"
+# thecntry <- "NO"
+# new_ds <- "2025-07-11"
 # last7 <- metatargetr::get_ad_report(country = thecntry, timeframe = "last_7_days", date = new_ds)
 # last30 <- metatargetr::get_ad_report(country = thecntry, timeframe = "last_30_days", date = new_ds)
 # # da30 <- da30 %>% bind_rows_chr(da30_2)
@@ -796,7 +798,7 @@ get_complete_targeting_db <- function(country,
   ds_start   <- as.Date(ds_start)
   
   db <- safe_get_targeting_db(country, days, ds_start, max_back = max_back)
-  ad_report <- metatargetr::get_ad_report(country, timeframe, ds_start)
+  ad_report <- get_ad_report(country, timeframe, ds_start)
   
   round <- 1
   repeat {
