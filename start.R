@@ -7,7 +7,8 @@
 
   
 
-pacman::p_load(knitr, tidyverse, openxlsx, rmarkdown, rvest, shinydashboard, tidytable)
+pacman::p_load(knitr, tidyverse, openxlsx, rmarkdown, rvest, shinydashboard, tidytable, remotes)
+remotes::install_github("favtats/metatargetr", upgrade = "never")
 # setwd("C:/Users/fabio/Dropbox/postdoc/microdashboards/wtm_iq/")
 # setwd("..")
 # print(getwd())
