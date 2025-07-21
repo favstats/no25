@@ -49,7 +49,7 @@ color_dat <- color_dat %>%
 
 ## Geographical Targeting
 
-The chart below displays the geographical targeting of that political parties on Meta platforms.
+The chart below displays the geographical targeting of political advertisers on Meta platforms.
 
 ::: {.panel-tabset}
 
@@ -151,7 +151,7 @@ htmltools::browsable(
   columns = list(
     amount_spent = colDef(
       name = "💰 Spending",
-      format = colFormat(prefix = "$", separators = TRUE, digits = 0),
+      format = colFormat(prefix = "kr", separators = TRUE, digits = 0),
       filterMethod = JS("filterMinValue"),
       filterInput = JS("rangeFilter"),
       filterable = TRUE
@@ -363,7 +363,7 @@ a(
 
 The table above shows spending data from Meta at the advertiser level, broken down per targeting criterion. This means we can’t account for combinations of targeting criteria.
 
-For example, if one ad targets two ZIP codes with $100 and another targets just one of those ZIP codes with $100, we can’t separate the overlap. In this case, we record $200 spent on the shared ZIP code and $100 on the other.
+For example, if one ad targets two ZIP codes with $100 and another targets just one of those ZIP codes with kr100, we can’t separate the overlap. In this case, we record kr200 spent on the shared ZIP code and kr100 on the other.
 
 #### Regions
 
@@ -576,7 +576,7 @@ htmltools::browsable(
   columns = list(
     amount_spent = colDef(
       name = "💰 Spending",
-      format = colFormat(prefix = "$", separators = TRUE, digits = 0),
+      format = colFormat(prefix = "kr", separators = TRUE, digits = 0),
       filterMethod = JS("filterMinValue"),
       filterInput = JS("rangeFilter"),
       filterable = TRUE
@@ -789,7 +789,7 @@ a(
 
 The table above shows spending data from Meta at the advertiser level, broken down per targeting criterion. This means we can’t account for combinations of targeting criteria.
 
-For example, if one ad targets two ZIP codes with $100 and another targets just one of those ZIP codes with $100, we can’t separate the overlap. In this case, we record $200 spent on the shared ZIP code and $100 on the other.
+For example, if one ad targets two ZIP codes with kr100 and another targets just one of those ZIP codes with kr100, we can’t separate the overlap. In this case, we record kr200 spent on the shared ZIP code and kr100 on the other.
 
 
 

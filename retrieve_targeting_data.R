@@ -799,11 +799,12 @@ get_complete_targeting_db <- function(country,
   ds_start   <- as.Date(ds_start)
   
   db <- safe_get_targeting_db(country, days, ds_start, max_back = max_back)
-  ad_report <- get_ad_report(country, timeframe, ds_start)
+  # ad_report <- get_ad_report(country, timeframe, ds_start)
   
   round <- 1
+  prev_missing <- 0
   repeat {
-    missing <- setdiff(ad_report$page_id, db$page_id)
+    missing <- setdiff(all_dat$page_id, db$page_id)
     if (length(missing) == 0) break
     
     if (round > max_rounds) {
@@ -819,18 +820,23 @@ get_complete_targeting_db <- function(country,
     }
     
     cli::cli_alert_info("Round {round}: fetching {length(missing)} missing IDs …")
+    if(length(missing)!=prev_missing){
+      newly <- purrr::map_dfr(
+        missing,
+        \(id) {
+          Sys.sleep(pause)
+          tryCatch(
+            metatargetr::get_targeting(id, toupper(timeframe)),
+            error = \(e) NULL      # skip IDs that still fail
+          )
+        }
+      )      
+    } else {
+      return(db)
+    }
+
     
-    newly <- purrr::map_dfr(
-      missing,
-      \(id) {
-        Sys.sleep(pause)
-        tryCatch(
-          metatargetr::get_targeting(id, toupper(timeframe)),
-          error = \(e) NULL      # skip IDs that still fail
-        )
-      }
-    )
-    
+    prev_missing <<- missing
     db    <- bind_rows_chr(db, newly)
     round <- round + 1
   }
