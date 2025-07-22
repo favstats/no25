@@ -632,7 +632,7 @@ try({
       the_assets <-
         httr::GET(
           paste0(
-            "https://github.com/favstats/meta_ad_reports/releases/expanded_assets/",
+            "https://github.com/favstats/meta_ad_reports2/releases/expanded_assets/",
             .x
           )
         )
@@ -678,7 +678,7 @@ try({
   
   download.file(
     paste0(
-      "https://github.com/favstats/meta_ad_reports/releases/download/",
+      "https://github.com/favstats/meta_ad_reports2/releases/download/",
       thecntry,
       "-last_90_days/",
       latest$file_name
@@ -688,7 +688,8 @@ try({
   
   last7 <- readRDS("report.rds") %>%
     mutate(sources = "report") %>%
-    mutate(party = "unknown")
+    mutate(party = "unknown") %>% 
+    filter(page_id != "0")
   
   file.remove("report.rds")
 })
@@ -804,7 +805,7 @@ get_complete_targeting_db <- function(country,
   round <- 1
   prev_missing <- 0
   repeat {
-    missing <- setdiff(all_dat$page_id, db$page_id)
+    missing <- setdiff(last7$page_id, db$page_id)
     if (length(missing) == 0) break
     
     if (round > max_rounds) {
