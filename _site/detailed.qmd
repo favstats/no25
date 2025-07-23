@@ -244,7 +244,7 @@ generate_plots <- function(plot_data, detail_data, exclusion = FALSE) {
         )
       
       page_strings <- apply(top_pages_with_perc, 1, function(row) {
-        sprintf("&nbsp;&nbsp;&nbsp;• %s: %.1f%% of this criterion's spend (%.1f%% of party's total)",
+        sprintf("&nbsp;&nbsp;&nbsp;• %s: %.1f%% of this criterion's spend",
                 row["page_name"],
                 as.numeric(row["pct_of_criterion_spend"]),
                 as.numeric(row["pct_of_party_spend"]))
