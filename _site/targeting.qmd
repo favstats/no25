@@ -45,7 +45,7 @@ color_dat <- color_dat %>%
     T ~ colors
   ))
 
-sets <- list(cntry = "NL")
+sets <- list(cntry = "NO")
 
 ```
 
@@ -76,16 +76,21 @@ How much did the campaigns of political parties spend on different audiences? Th
 
 
 library(tidytable)
-# if(Sys.info()[["user"]]=="fabio" | Sys.info()[["user"]]=="favoo"){
-#   col_each30 <- readRDS("col_each30.rds")
-# } else {
-  
-  
+library(dplyr)
+library(purrr)
+library(stringr)
+library(highcharter)
+library(tidyr) # For complete()
+library(forcats) # For fct_reorder()
+
+# Assuming election_dat30, calc_targeting, and currency_symbol are available
+
+# This is your original data preparation for party-level analysis
+# It remains unchanged.
 election_dat30 <- election_dat30 %>% 
     mutate(total_spend = total_spend_formatted) 
-# t1 <- Sys.time()
 
-  col_each30 <- election_dat30 %>%
+col_each30 <- election_dat30 %>%
     mutate(cntry_party = paste0(cntry, "XXXXXXX", party)) %>% 
     pull(cntry_party) %>% 
     unique() %>% 
@@ -93,39 +98,89 @@ election_dat30 <- election_dat30 %>%
       important <- str_split(.x, "XXXXXXX") %>% unlist()
       the_dat <- election_dat30 %>% filter(cntry == important[1]) %>% filter(party == important[2])  
       
-        calc_targeting(the_dat) %>%
-            mutate(#coalition = .x$coalition[1],
-                   party = the_dat$party[1],
-                   internal_id = the_dat$internal_id[1],
-                   cntry = the_dat$cntry[1])
+      calc_targeting(the_dat) %>%
+        mutate(
+          party = the_dat$party[1],
+          internal_id = the_dat$internal_id[1],
+          cntry = the_dat$cntry[1])
     }, .progress = T) %>% 
-  filter(target != "Gender: All") %>% 
-  filter(target != "Unknown")
+    filter(target != "Gender: All") %>% 
+    filter(target != "Unknown")
 
-# t2 <- Sys.time()
-# t2-t1
-#   
+# --- START: New Block to get Page-Level Spend by Target Method ---
 
-# saveRDS(col_each30, "col_each30.rds")
+# As per your suggestion, we run `calc_targeting` on each page to get the needed detail.
+page_spend_by_target <- election_dat30 %>%
+  # Create a unique identifier for each page to iterate over
+  mutate(cntry_page = paste0(cntry, "XXXXXXX", page_name)) %>%
+  pull(cntry_page) %>%
+  unique() %>%
+  map_dfr(~{
+    # Deconstruct the identifier safely
+    important <- str_split(.x, "XXXXXXX", n = 2) %>% unlist()
+    page_country <- important[1]
+    page_name_filter <- important[2]
+    
+    # Filter the main dataset for this specific page
+    the_page_dat <- election_dat30 %>% 
+      filter(cntry == page_country, page_name == page_name_filter)
+      
+    # If the page has data, run calc_targeting and add back identifiers
+    if(nrow(the_page_dat) > 0) {
+      calc_targeting(the_page_dat) %>%
+        mutate(
+          page_name = page_name_filter,
+          party = the_page_dat$party[1] 
+        )
+    }
+  }, .progress = TRUE)
 
+# --- END: Page-Level Spend Block ---
 
-
-  
-  
-# }
-
+# This is your original data preparation for the plot
 all_spend <- col_each30  %>% 
-  distinct(internal_id, .keep_all = T) %>% 
-  summarise(total = sum(total),
-            total_ads = sum(total_ads))
+    distinct(internal_id, .keep_all = T) %>% 
+    summarise(total = sum(total),
+              total_ads = sum(total_ads))
 
+# --- THIS BLOCK IS NOW FIXED ---
 gg <- col_each30  %>%
-  filter(target != "countries") %>% 
-  add_count(target) %>%
-  # filter(n == 3) %>%
+    filter(target != "countries") %>% 
+    add_count(target) %>%
+    mutate(target_clean = case_when(
+        target == "custom_audience" ~ "Custom Audiences (Internal Data)",
+        target == "custom_audience_thirdparty" ~ "Custom Audiences (Uploaded Data)",
+        target == "countries" ~ "GEOGRAPHY: Entire Country",
+        target == "regions" ~ "GEOGRAPHY: Regions",
+        target == "lookalike_audience" ~ "Lookalike Audiences",
+        target == "interest" ~ "Detailed",
+        target == "age" ~ "Age",
+        target == "zips" ~ "GEOGRAPHY: Postal Code",
+        target == "CITY" ~ "GEOGRAPHY: City",
+        target == "language" ~ "Language",
+        target == "gender" ~ "Gender",
+        target == "COMUNE" ~ "GEOGRAPHY: Municipality",
+        target == "electoral_districts" ~ "GEOGRAPHY: Electoral Districts",
+        target == "COUNTY" ~ "GEOGRAPHY: Counties",
+        str_detect(target, "NEIGHBOR") ~ "GEOGRAPHY: Neighborhood",
+        T ~ target
+    )) %>%
+    filter(target_clean != "Unknown") %>%
+    group_by(target_clean) %>% # FIX: Group by the new, clean column name
+    summarize(spend_per = sum(spend_per)) %>% 
+    rename(target = target_clean) %>% # FIX: Rename the column *after* the summary
+    mutate(perc = spend_per/all_spend$total*100) %>% 
+    arrange(desc(perc)) %>% 
+    filter(perc >= 0.01)
+
+# --- START: New Block for Tooltip Generation ---
+
+# 1. In our new detailed data, clean the target names to match the plot data `gg`.
+page_spend_by_target_renamed <- page_spend_by_target %>%
   mutate(target = case_when(
-      target == "custom_audience" ~ "Custom Audiences (Internal Data)",
-      target == "custom_audience_thirdparty" ~ "Custom Audiences (Uploaded Data)",    target == "countries" ~ "GEOGRAPHY: Entire Country",
+    target == "custom_audience" ~ "Custom Audiences (Internal Data)",
+    target == "custom_audience_thirdparty" ~ "Custom Audiences (Uploaded Data)",
+    target == "countries" ~ "GEOGRAPHY: Entire Country",
     target == "regions" ~ "GEOGRAPHY: Regions",
     target == "lookalike_audience" ~ "Lookalike Audiences",
     target == "interest" ~ "Detailed",
@@ -139,28 +194,54 @@ gg <- col_each30  %>%
     target == "COUNTY" ~ "GEOGRAPHY: Counties",
     str_detect(target, "NEIGHBOR") ~ "GEOGRAPHY: Neighborhood",
     T ~ target
-  )) %>%
-    filter(target != "Unknown") %>%
-  # group_by(internal_id, target) %>% 
-  # arrange(desc(perc)) %>% 
-  # slice(1) %>% 
-  # ungroup() %>% 
-  group_by(target) %>% 
-  summarize(spend_per = sum(spend_per)) %>% 
-  mutate(perc = spend_per/all_spend$total*100) %>% 
-    arrange(desc(perc)) %>% 
-  filter(perc >= 0.01)
+  ))
 
+# 2. Use a FOR loop to generate the tooltip HTML for each target method in `gg`.
+tooltip_list <- vector("character", nrow(gg))
 
-library(highcharter)
+for (i in 1:nrow(gg)) {
+  current_target <- gg$target[i]
+  total_spend_for_method <- gg$spend_per[i]
 
-the_order <- gg %>%
+  # Find top spending pages for the current target method.
+  top_pages <- page_spend_by_target_renamed %>%
+    filter(target == current_target, spend_per > 0) %>%
+    arrange(-spend_per) %>%
+    slice_head(n = 5) %>% # Show up to top 5 pages
+    mutate(perc_of_method_spend = (spend_per / total_spend_for_method) * 100) %>%
+    filter(!is.na(page_name))
+
+  if (nrow(top_pages) > 0) {
+    page_strings <- apply(top_pages, 1, function(row) {
+      sprintf("&nbsp;&nbsp;&nbsp;• %s: %s (%.1f%%)",
+              row["page_name"],
+              scales::comma(round(as.numeric(row["spend_per"])), prefix = currency_symbol),
+              as.numeric(row["perc_of_method_spend"]))
+    })
+    
+    num_pages <- nrow(top_pages)
+    header_text <- paste0("Top ", num_pages, " page", if(num_pages > 1) "s", " using this method:")
+    
+    tooltip_list[i] <- paste0("<br><br><b>", header_text, "</b><br>", paste(page_strings, collapse = "<br>"))
+  } else {
+    tooltip_list[i] <- ""
+  }
+}
+
+# 3. Add the generated tooltip strings as a column to the plot data `gg`.
+gg_with_tooltip <- gg %>%
+  mutate(tooltip_pages_html = tooltip_list)
+
+# --- END: Tooltip Generation Block ---
+
+# Your original plotting code, now using the enhanced data
+the_order <- gg_with_tooltip %>%
   tidyr::complete(target, fill = list(perc = 0)) %>%
   dplyr::mutate(target = forcats::fct_reorder(target, perc, .desc = FALSE)) %>%
   dplyr::pull(target) %>%
   levels()
 
-gg %>%
+gg_with_tooltip %>%
   mutate(spend_perlab = scales::comma(round(spend_per))) %>%
   dplyr::mutate(target = forcats::fct_relevel(target, the_order)) %>%
   highcharter::hchart(type = "bar", hcaes(x = target, y = perc)) %>%
@@ -168,17 +249,22 @@ gg %>%
   highcharter::hc_xAxis(labels = list(style = list(fontSize = "10px"))) %>%
   highcharter::hc_yAxis(title = list(text = "Budget spent on targeting method (% of total spend)")) %>%
   highcharter::hc_add_theme(hc_theme_google()) %>%
- highcharter::hc_tooltip(
-    pointFormat = paste0("<b>{point.target}</b><br>% of total budget spent: {point.y:.1f}%<br>a total of ", currency_symbol, "{point.spend_perlab} on this method."),
-    headerFormat = ""
+  highcharter::hc_tooltip(
+    pointFormat = paste0(
+        "<b>{point.target}</b>",
+        "<br>% of total budget spent: {point.y:.1f}%",
+        "<br>A total of ", currency_symbol, "{point.spend_perlab} on this method.",
+        "{point.tooltip_pages_html}" # <-- This adds the new info
+    ),
+    headerFormat = "",
+    useHTML = TRUE
   ) %>%
   highcharter::hc_credits(
     enabled = TRUE,
     text = "Source: Meta Ad Library. Data Viz: Fabio Votta (@favstats)."
-  )%>%
-    hc_exporting(
-      enabled = TRUE
-    )
+  ) %>%
+  hc_exporting(enabled = TRUE) %>% 
+  hc_xAxis(title = list(text = ""))
 
 
 
@@ -191,24 +277,28 @@ gg %>%
 #### By Party
 
 ```{r}
-
-
 library(highcharter)
 library(dplyr)
+library(purrr)
+library(stringr)
+library(forcats)
 
-plot_geography <- function(x) {
+# Assuming color_dat and currency_symbol are available in your environment
+# And `page_spend_by_target_renamed` exists and has columns:
+# party, page_name, target (cleaned names), spend_per
+
+plot_geography <- function(x, page_spend_detail) {
   # x <- col_each30
-   gg <- x %>%
-  filter(target != "countries") %>% 
-  # group_by(internal_id, target, party) %>% 
-  # arrange(desc(perc)) %>% 
-  # slice(1) %>% 
-  # ungroup() %>% 
-  group_by(target, party) %>% 
-  summarize(spend_per = sum(spend_per),
-            total = sum(total))  %>% 
-  ungroup() %>% 
-  mutate(perc = spend_per/total*100) %>%
+  # page_spend_detail is your pre-existing page_spend_by_target_renamed
+  
+  # Your original logic to create the main plot data. This is unchanged.
+  gg <- x %>%
+    filter(target != "countries") %>% 
+    group_by(target, party) %>% 
+    summarize(spend_per = sum(spend_per),
+              total = sum(total))  %>% 
+    ungroup() %>% 
+    mutate(perc = spend_per/total*100) %>%
     filter(perc >= 0.5) %>%
     mutate(target = case_when(
       target == "custom_audience" ~ "Custom Audiences (Internal Data)",
@@ -232,50 +322,90 @@ plot_geography <- function(x) {
     add_count(party, target) %>% 
     arrange(desc(n))
 
-  # the_order <- gg %>%
-  #   complete(party, target, fill = list(n = 0)) %>%
-  #   mutate(target = fct_reorder(target, n, .desc = FALSE)) %>%
-  #   pull(target) %>%
-  #   levels()
-
-
-
   charts <- gg %>%
-  mutate(spend_perlab = scales::comma(round(spend_per))) %>%
+    mutate(spend_perlab = scales::comma(round(spend_per))) %>%
     split(.$party) %>%
     map(~ {
-      the_color <-
-        color_dat$colors[color_dat$party == .x$party[1]]
+      .x_party_data <- .x
+      the_color <- color_dat$colors[color_dat$party == .x_party_data$party[1]]
       
-         the_order <- .x %>%
-            filter(party == .x$party[1]) %>% 
-           arrange(desc(perc)) %>% 
-            mutate(target = fct_reorder(target, perc, .desc = T)) %>%
-            pull(target) %>%
-            levels()
-      # print(the_order)
-      daaat <-.x %>% 
+      # --- START: Corrected Tooltip generation for this specific party ---
+      tooltip_list <- vector("character", nrow(.x_party_data))
+      
+      for (i in 1:nrow(.x_party_data)) {
+        current_row <- .x_party_data[i, ]
+        current_party_name <- current_row$party
+        current_target_name <- current_row$target
+        # The total spend for the party on this specific method (the value of the bar)
+        total_spend_for_criterion <- current_row$spend_per
+
+        # Filter the detailed page data using the clean target name
+        top_pages <- page_spend_detail %>%
+          filter(party == current_party_name, target == current_target_name) %>%
+          arrange(desc(spend_per)) %>%
+          slice_head(n = 3)
+          
+        if (nrow(top_pages) > 0) {
+          
+          # Add the percentage calculation
+          top_pages_with_perc <- top_pages %>%
+            mutate(
+              perc_of_criterion = (spend_per / total_spend_for_criterion) * 100
+            )
+            
+          page_strings <- apply(top_pages_with_perc, 1, function(row) {
+            # Update the sprintf string to include the new percentage
+            sprintf("&nbsp;&nbsp;&nbsp;• %s: %s (%.1f%%)",
+                    row["page_name"],
+                    scales::comma(round(as.numeric(row["spend_per"])), prefix = currency_symbol),
+                    as.numeric(row["perc_of_criterion"]))
+          })
+
+          header_text <- paste0("Top ", nrow(top_pages), " Page", if(nrow(top_pages) > 1) "s", " using this method:")
+          tooltip_list[i] <- paste0("<br><br><b>", header_text, "</b><br>", paste(page_strings, collapse = "<br>"))
+        } else {
+          tooltip_list[i] <- ""
+        }
+      }
+      
+      data_with_tooltips <- .x_party_data %>%
+        mutate(tooltip_pages_html = tooltip_list)
+      # --- END: Tooltip generation ---
+      
+      # Original logic for ordering the bars
+      the_order <- data_with_tooltips %>%
+        filter(party == data_with_tooltips$party[1]) %>% 
+        arrange(desc(perc)) %>% 
+        mutate(target = fct_reorder(target, perc, .desc = T)) %>%
+        pull(target) %>%
+        levels()
+      
+      daaat <- data_with_tooltips %>% 
         dplyr::mutate(target = as.factor(target)) %>% 
         dplyr::mutate(target = factor(target, levels =  the_order)) %>% 
         arrange(target)
       
+      # Final plot call using the data that now includes the tooltip HTML
       hchart(daaat, type = "bar", hcaes(x = target, y = perc), color = the_color) %>%
-            hc_plotOptions(bar = list(horizontal = TRUE, stacking = "normal")) %>%
-            hc_yAxis(title = list(text = "% party budget spent on targeting method"), max = 100, min = 0) %>%
-            hc_xAxis(title = "", labels = list(style = list(fontSize = "10px"))) %>%
-            hc_add_theme(hc_theme_google()) %>%
-           highcharter::hc_tooltip(
-              pointFormat = paste0("<b>{point.target}</b><br>% of total budget spent: {point.y:.1f}%<br>a total of ", currency_symbol,           "{point.spend_perlab} on this method."),
-              headerFormat = ""
-            ) %>%
-            hc_title(text = unique(daaat$party), align = "left", style = list(fontWeight = "bold")) %>%
+        hc_plotOptions(bar = list(horizontal = TRUE, stacking = "normal")) %>%
+        hc_yAxis(title = list(text = "% party budget spent on targeting method"), max = 100, min = 0) %>%
+        hc_xAxis(title = "", labels = list(style = list(fontSize = "10px"))) %>%
+        hc_add_theme(hc_theme_google()) %>%
+        highcharter::hc_tooltip(
+          pointFormat = paste0(
+            "<b>{point.target}</b>",
+            "<br>% of total budget spent: {point.y:.1f}%",
+            "<br>A total of ", currency_symbol, "{point.spend_perlab} on this method.",
+            "{point.tooltip_pages_html}" # <-- This adds the new info
+          ),
+          headerFormat = "",
+          useHTML = TRUE
+        ) %>%
+        hc_title(text = unique(daaat$party), align = "left", style = list(fontWeight = "bold")) %>%
         hc_size(height = 300) %>%
-    hc_exporting(
-      enabled = TRUE
-    )
-    }
-    )
-
+        hc_exporting(enabled = TRUE)
+    })
+  
   charts
 }
 
@@ -287,7 +417,7 @@ library(htmltools)
 library(purrr)
 
 # Generate plots
-plots <- plot_geography(col_each30)
+plots <- plot_geography(col_each30, page_spend_by_target_renamed)
 
 # Map each plot to a column
 columns <- map(plots, ~ div(style = "width: 50%; float: left;", .x))
@@ -326,11 +456,23 @@ tags$div(class = "container", do.call(tags$div, rows))
 
 
 ```{r, fig.width=8, fig.height=5, dpi=300}
+
+library(tidytable)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(highcharter)
+library(tidyr) # For complete()
+library(forcats) # For fct_reorder()
+
+# Assuming election_dat7, calc_targeting, and currency_symbol are available
+
+# This is your original data preparation for party-level analysis
+# It remains unchanged.
 election_dat7 <- election_dat7 %>% 
     mutate(total_spend = total_spend_formatted) 
-# t1 <- Sys.time()
 
-  col_each7 <- election_dat7 %>%
+col_each7 <- election_dat7 %>%
     mutate(cntry_party = paste0(cntry, "XXXXXXX", party)) %>% 
     pull(cntry_party) %>% 
     unique() %>% 
@@ -338,27 +480,89 @@ election_dat7 <- election_dat7 %>%
       important <- str_split(.x, "XXXXXXX") %>% unlist()
       the_dat <- election_dat7 %>% filter(cntry == important[1]) %>% filter(party == important[2])  
       
-        calc_targeting(the_dat) %>%
-            mutate(#coalition = .x$coalition[1],
-                   party = the_dat$party[1],
-                   internal_id = the_dat$internal_id[1],
-                   cntry = the_dat$cntry[1])
+      calc_targeting(the_dat) %>%
+        mutate(
+          party = the_dat$party[1],
+          internal_id = the_dat$internal_id[1],
+          cntry = the_dat$cntry[1])
     }, .progress = T) %>% 
-  filter(target != "Gender: All") %>% 
-  filter(target != "Unknown")
+    filter(target != "Gender: All") %>% 
+    filter(target != "Unknown")
 
+# --- START: New Block to get Page-Level Spend by Target Method ---
+
+# As per your suggestion, we run `calc_targeting` on each page to get the needed detail.
+page_spend_by_target <- election_dat7 %>%
+  # Create a unique identifier for each page to iterate over
+  mutate(cntry_page = paste0(cntry, "XXXXXXX", page_name)) %>%
+  pull(cntry_page) %>%
+  unique() %>%
+  map_dfr(~{
+    # Deconstruct the identifier safely
+    important <- str_split(.x, "XXXXXXX", n = 2) %>% unlist()
+    page_country <- important[1]
+    page_name_filter <- important[2]
+    
+    # Filter the main dataset for this specific page
+    the_page_dat <- election_dat7 %>% 
+      filter(cntry == page_country, page_name == page_name_filter)
+      
+    # If the page has data, run calc_targeting and add back identifiers
+    if(nrow(the_page_dat) > 0) {
+      calc_targeting(the_page_dat) %>%
+        mutate(
+          page_name = page_name_filter,
+          party = the_page_dat$party[1] 
+        )
+    }
+  }, .progress = TRUE)
+
+# --- END: Page-Level Spend Block ---
+
+# This is your original data preparation for the plot
 all_spend <- col_each7  %>% 
-  distinct(internal_id, .keep_all = T) %>% 
-  summarise(total = sum(total),
-            total_ads = sum(total_ads))
+    distinct(internal_id, .keep_all = T) %>% 
+    summarise(total = sum(total),
+              total_ads = sum(total_ads))
 
+# --- THIS BLOCK IS NOW FIXED ---
 gg <- col_each7  %>%
-  filter(target != "countries") %>%
-  add_count(target) %>%
-  # filter(n == 3) %>%
+    filter(target != "countries") %>% 
+    add_count(target) %>%
+    mutate(target_clean = case_when(
+        target == "custom_audience" ~ "Custom Audiences (Internal Data)",
+        target == "custom_audience_thirdparty" ~ "Custom Audiences (Uploaded Data)",
+        target == "countries" ~ "GEOGRAPHY: Entire Country",
+        target == "regions" ~ "GEOGRAPHY: Regions",
+        target == "lookalike_audience" ~ "Lookalike Audiences",
+        target == "interest" ~ "Detailed",
+        target == "age" ~ "Age",
+        target == "zips" ~ "GEOGRAPHY: Postal Code",
+        target == "CITY" ~ "GEOGRAPHY: City",
+        target == "language" ~ "Language",
+        target == "gender" ~ "Gender",
+        target == "COMUNE" ~ "GEOGRAPHY: Municipality",
+        target == "electoral_districts" ~ "GEOGRAPHY: Electoral Districts",
+        target == "COUNTY" ~ "GEOGRAPHY: Counties",
+        str_detect(target, "NEIGHBOR") ~ "GEOGRAPHY: Neighborhood",
+        T ~ target
+    )) %>%
+    filter(target_clean != "Unknown") %>%
+    group_by(target_clean) %>% # FIX: Group by the new, clean column name
+    summarize(spend_per = sum(spend_per)) %>% 
+    rename(target = target_clean) %>% # FIX: Rename the column *after* the summary
+    mutate(perc = spend_per/all_spend$total*100) %>% 
+    arrange(desc(perc)) %>% 
+    filter(perc >= 0.01)
+
+# --- START: New Block for Tooltip Generation ---
+
+# 1. In our new detailed data, clean the target names to match the plot data `gg`.
+page_spend_by_target_renamed <- page_spend_by_target %>%
   mutate(target = case_when(
-      target == "custom_audience" ~ "Custom Audiences (Internal Data)",
-      target == "custom_audience_thirdparty" ~ "Custom Audiences (Uploaded Data)",    target == "countries" ~ "GEOGRAPHY: Entire Country",
+    target == "custom_audience" ~ "Custom Audiences (Internal Data)",
+    target == "custom_audience_thirdparty" ~ "Custom Audiences (Uploaded Data)",
+    target == "countries" ~ "GEOGRAPHY: Entire Country",
     target == "regions" ~ "GEOGRAPHY: Regions",
     target == "lookalike_audience" ~ "Lookalike Audiences",
     target == "interest" ~ "Detailed",
@@ -372,28 +576,54 @@ gg <- col_each7  %>%
     target == "COUNTY" ~ "GEOGRAPHY: Counties",
     str_detect(target, "NEIGHBOR") ~ "GEOGRAPHY: Neighborhood",
     T ~ target
-  )) %>%
-    filter(target != "Unknown") %>%
-  # group_by(internal_id, target) %>% 
-  # arrange(desc(perc)) %>% 
-  # slice(1) %>% 
-  # ungroup() %>% 
-  group_by(target) %>% 
-  summarize(spend_per = sum(spend_per)) %>% 
-  mutate(perc = spend_per/all_spend$total*100) %>% 
-    arrange(desc(perc))%>% 
-  filter(perc >= 0.01)
+  ))
 
+# 2. Use a FOR loop to generate the tooltip HTML for each target method in `gg`.
+tooltip_list <- vector("character", nrow(gg))
 
-library(highcharter)
+for (i in 1:nrow(gg)) {
+  current_target <- gg$target[i]
+  total_spend_for_method <- gg$spend_per[i]
 
-the_order <- gg %>%
+  # Find top spending pages for the current target method.
+  top_pages <- page_spend_by_target_renamed %>%
+    filter(target == current_target, spend_per > 0) %>%
+    arrange(-spend_per) %>%
+    slice_head(n = 5) %>% # Show up to top 5 pages
+    mutate(perc_of_method_spend = (spend_per / total_spend_for_method) * 100) %>%
+    filter(!is.na(page_name))
+
+  if (nrow(top_pages) > 0) {
+    page_strings <- apply(top_pages, 1, function(row) {
+      sprintf("&nbsp;&nbsp;&nbsp;• %s: %s (%.1f%%)",
+              row["page_name"],
+              scales::comma(round(as.numeric(row["spend_per"])), prefix = currency_symbol),
+              as.numeric(row["perc_of_method_spend"]))
+    })
+    
+    num_pages <- nrow(top_pages)
+    header_text <- paste0("Top ", num_pages, " page", if(num_pages > 1) "s", " using this method:")
+    
+    tooltip_list[i] <- paste0("<br><br><b>", header_text, "</b><br>", paste(page_strings, collapse = "<br>"))
+  } else {
+    tooltip_list[i] <- ""
+  }
+}
+
+# 3. Add the generated tooltip strings as a column to the plot data `gg`.
+gg_with_tooltip <- gg %>%
+  mutate(tooltip_pages_html = tooltip_list)
+
+# --- END: Tooltip Generation Block ---
+
+# Your original plotting code, now using the enhanced data
+the_order <- gg_with_tooltip %>%
   tidyr::complete(target, fill = list(perc = 0)) %>%
   dplyr::mutate(target = forcats::fct_reorder(target, perc, .desc = FALSE)) %>%
   dplyr::pull(target) %>%
   levels()
 
-gg %>%
+gg_with_tooltip %>%
   mutate(spend_perlab = scales::comma(round(spend_per))) %>%
   dplyr::mutate(target = forcats::fct_relevel(target, the_order)) %>%
   highcharter::hchart(type = "bar", hcaes(x = target, y = perc)) %>%
@@ -401,17 +631,22 @@ gg %>%
   highcharter::hc_xAxis(labels = list(style = list(fontSize = "10px"))) %>%
   highcharter::hc_yAxis(title = list(text = "Budget spent on targeting method (% of total spend)")) %>%
   highcharter::hc_add_theme(hc_theme_google()) %>%
- highcharter::hc_tooltip(
-    pointFormat = paste0("<b>{point.target}</b><br>% of total budget spent: {point.y:.1f}%<br>a total of ", currency_symbol, "{point.spend_perlab} on this method."),
-    headerFormat = ""
+  highcharter::hc_tooltip(
+    pointFormat = paste0(
+        "<b>{point.target}</b>",
+        "<br>% of total budget spent: {point.y:.1f}%",
+        "<br>A total of ", currency_symbol, "{point.spend_perlab} on this method.",
+        "{point.tooltip_pages_html}" # <-- This adds the new info
+    ),
+    headerFormat = "",
+    useHTML = TRUE
   ) %>%
   highcharter::hc_credits(
     enabled = TRUE,
     text = "Source: Meta Ad Library. Data Viz: Fabio Votta (@favstats)."
-  )%>%
-    hc_exporting(
-      enabled = TRUE
-    )
+  ) %>%
+  hc_exporting(enabled = TRUE) %>% 
+  hc_xAxis(title = list(text = ""))
 
 
 
@@ -423,7 +658,7 @@ gg %>%
 ```{r echo=FALSE, results='asis'}
 
 # Generate plots
-plots <- plot_geography(col_each7)
+plots <- plot_geography(col_each7, page_spend_by_target_renamed)
 
 # Map each plot to a column
 columns <- map(plots, ~ div(style = "width: 50%; float: left;", .x))
