@@ -165,7 +165,7 @@ contested_dat7 <- interest_targeting7 %>%
 
 ```{r, fig.width=16, fig.height=12, dpi=300}
 
-generate_plots <- function(data, exclusion = FALSE) {
+generate_plots <- function(plot_data, detail_data, exclusion = FALSE) {
   
   if (exclusion) {
     wooord <- "on ads excluding"
@@ -174,34 +174,106 @@ generate_plots <- function(data, exclusion = FALSE) {
     wooord <- "on ads including"
     wooord2 <- "targeting"
   }
-
+  
+  # --- Data Preparation for Tooltip (USER'S CODE - UNCHANGED) ---
+  detail_spend_data <- detail_data  %>%
+    mutate(total_spend = total_spend_formatted) %>%
+    filter(type == "detailed") %>%
+    # mutate(total_spend = readr::parse_number(total_spend_formatted)) %>%
+    mutate(total_spend = ifelse(total_spend == 100, 1, total_spend)) %>%
+    mutate(spend = total_spend * total_spend_pct) %>% 
+    # We only need these columns for the tooltip logic
+    select(party, page_name, value, spend) %>%
+    # Aggregate spend for each page within a specific party/criterion combo
+    group_by(party, page_name, value) %>%
+    summarise(page_spend = sum(spend, na.rm = TRUE), .groups = "drop") %>%
+    filter(page_spend > 0)
+  
+  # Calculate the total overall spend for each party from the detailed data
+  party_total_spends <- detail_spend_data %>%
+    group_by(party) %>%
+    summarise(party_total_spend = sum(page_spend, na.rm = TRUE))
+  
+  # --- Process Main Plot Data ---
   set.seed(24101991)
-  # Process data
-  gg <- data %>%
+  gg_processed <- plot_data %>%
     group_by(party) %>%
     arrange(desc(perc)) %>%
     distinct(value, .keep_all = TRUE) %>%
     group_modify(~ {
-      if (length(unique(.x$perc[1:20])) == 1) {
-        # Randomly sample if all top 10 perc are tied
+      if (nrow(.x) >= 20 && length(unique(.x$perc[1:20])) == 1) {
         .x %>% slice_sample(n = 20)
       } else {
-        # Take top 10 normally
-        .x %>% slice(1:20)
+        .x %>% slice_head(n = 20)
       }
     }) %>%
-    ungroup() %>% 
-    arrange(desc(perc))
+    ungroup() %>%
+    arrange(desc(perc)) %>%
+    filter(perc >= 0.01) %>%
+    left_join(party_total_spends, by = "party")
 
+  # --- NEW: Generate Tooltip HTML using a robust FOR loop ---
+  # This approach avoids the errors of the previous method by processing each row individually.
+  tooltip_list <- vector("character", nrow(gg_processed))
+
+  for (i in 1:nrow(gg_processed)) {
+    # Explicitly get data for the current row
+    current_row <- gg_processed[i, ]
+    current_party <- current_row$party
+    current_value <- current_row$value
+    criterion_total_spend <- current_row$total_spend
+    party_total_spend <- current_row$party_total_spend
+
+    # Skip if essential data is missing, to prevent errors
+    if (is.na(current_party) || is.na(current_value) || is.na(criterion_total_spend) || is.na(party_total_spend)) {
+      tooltip_list[i] <- ""
+      next
+    }
+
+    # Find top pages by explicitly filtering for the CURRENT party and value
+    top_pages <- detail_spend_data %>%
+      filter(party == current_party, value == current_value) %>%
+      arrange(desc(page_spend)) %>%
+      slice_head(n = 3)
+
+    if (nrow(top_pages) > 0) {
+      top_pages_with_perc <- top_pages %>%
+        mutate(
+          pct_of_criterion_spend = (page_spend / criterion_total_spend) * 100,
+          pct_of_party_spend = (page_spend / party_total_spend) * 100
+        )
+      
+      page_strings <- apply(top_pages_with_perc, 1, function(row) {
+        sprintf("&nbsp;&nbsp;&nbsp;• %s: %.1f%% of this criterion's spend (%.1f%% of party's total)",
+                row["page_name"],
+                as.numeric(row["pct_of_criterion_spend"]),
+                as.numeric(row["pct_of_party_spend"]))
+      })
+      
+      num_pages <- nrow(top_pages_with_perc)
+      header_text <- paste0("Top ", num_pages, " page", if(num_pages > 1) "s", " using this criterion:")
+      
+      tooltip_list[i] <- paste0("<br><br><b>", header_text, "</b><br>", paste(page_strings, collapse = "<br>"))
+    } else {
+      tooltip_list[i] <- ""
+    }
+  }
+
+  # Add the generated tooltip strings as a column to the plot data
+  gg_with_tooltip <- gg_processed %>%
+    mutate(tooltip_pages_html = tooltip_list)
+
+  # --- Create Plots ---
+  # This section remains unchanged
   color_dat <- distinct(color_dat, party, .keep_all = TRUE) %>% drop_na()
-
-  # Create plots
-  plots <- gg %>%
+  
+  plots <- gg_with_tooltip %>%
     mutate(spend_perlab = scales::comma(round(total_spend))) %>%
     mutate(perc = perc * 100) %>%
     split(.$party) %>%
     map(~ {
       the_color <- color_dat$colors[color_dat$party == .x$party[1]]
+      
       hchart(.x,
              type = "bar",
              hcaes(x = value, y = perc),
@@ -209,17 +281,19 @@ generate_plots <- function(data, exclusion = FALSE) {
         hc_plotOptions(bar = list(horizontal = TRUE, stacking = "normal")) %>%
         hc_yAxis(
           title = list(text = paste0("% party budget spent on ", wooord2, " audience")),
-          max = max(data$perc * 100)
+          max = max(plot_data$perc * 100, na.rm = TRUE)
         ) %>%
         hc_xAxis(title = "", labels = list(style = list(fontSize = "10px"))) %>%
         hc_add_theme(hc_theme_google()) %>%
         highcharter::hc_tooltip(
           pointFormat = paste0(
-            "<b>{point.value}</b><br>% of total budget spent: {point.y:.1f}%<br>a total of ",
-            currency_symbol,
-            "{point.spend_perlab} ", wooord, " this audience."
+            "<b>{point.value}</b>",
+            "<br>% of total budget spent: {point.y:.1f}%",
+            "<br>A total of ", currency_symbol, "{point.spend_perlab} ", wooord, " this audience.",
+            "{point.tooltip_pages_html}"
           ),
-          headerFormat = ""
+          headerFormat = "",
+          useHTML = TRUE
         ) %>%
         hc_title(
           text = unique(.x$party),
@@ -229,10 +303,9 @@ generate_plots <- function(data, exclusion = FALSE) {
         hc_size(height = 500) %>%
         hc_exporting(enabled = TRUE)
     })
-
+  
   return(plots)
 }
-
 
 ```
 
@@ -246,7 +319,7 @@ generate_plots <- function(data, exclusion = FALSE) {
 ```{r echo=FALSE, results='asis'}
 
 # Generate plots
-plots <- generate_plots(contested_dat30)
+plots <- generate_plots(plot_data = contested_dat30, detail_data = election_dat30)
 
 if(length(plots)!=0){
 
@@ -288,8 +361,7 @@ tags$div(class = "container", do.call(tags$div, rows))
 
 ```{r echo=FALSE, results='asis'}
 
-# Generate plots
-plots <- generate_plots(contested_dat7)
+plots <- generate_plots(plot_data = contested_dat7, detail_data = election_dat7)
 
 if(length(plots)!=0){
 
@@ -416,9 +488,76 @@ excluded_dat7 <- interest_excluding7 %>%
 
 
 ```{r echo=FALSE, results='asis'}
+generate_plots_old <- function(data, exclusion = FALSE) {
+  
+  if (exclusion) {
+    wooord <- "on ads excluding"
+    wooord2 <- "excluding"
+  } else {
+    wooord <- "on ads including"
+    wooord2 <- "targeting"
+  }
+
+  set.seed(24101991)
+  # Process data
+  gg <- data %>%
+    group_by(party) %>%
+    arrange(desc(perc)) %>%
+    distinct(value, .keep_all = TRUE) %>%
+    group_modify(~ {
+      if (length(unique(.x$perc[1:20])) == 1) {
+        # Randomly sample if all top 10 perc are tied
+        .x %>% slice_sample(n = 20)
+      } else {
+        # Take top 10 normally
+        .x %>% slice(1:20)
+      }
+    }) %>%
+    ungroup() %>% 
+    arrange(desc(perc))
+
+  color_dat <- distinct(color_dat, party, .keep_all = TRUE) %>% drop_na()
+
+  # Create plots
+  plots <- gg %>%
+    mutate(spend_perlab = scales::comma(round(total_spend))) %>%
+    mutate(perc = perc * 100) %>%
+    split(.$party) %>%
+    map(~ {
+      the_color <- color_dat$colors[color_dat$party == .x$party[1]]
+      hchart(.x,
+             type = "bar",
+             hcaes(x = value, y = perc),
+             color = the_color) %>%
+        hc_plotOptions(bar = list(horizontal = TRUE, stacking = "normal")) %>%
+        hc_yAxis(
+          title = list(text = paste0("% party budget spent on ", wooord2, " audience")),
+          max = max(data$perc * 100)
+        ) %>%
+        hc_xAxis(title = "", labels = list(style = list(fontSize = "10px"))) %>%
+        hc_add_theme(hc_theme_google()) %>%
+        highcharter::hc_tooltip(
+          pointFormat = paste0(
+            "<b>{point.value}</b><br>% of total budget spent: {point.y:.1f}%<br>a total of ",
+            currency_symbol,
+            "{point.spend_perlab} ", wooord, " this audience."
+          ),
+          headerFormat = ""
+        ) %>%
+        hc_title(
+          text = unique(.x$party),
+          align = "left",
+          style = list(fontWeight = "bold")
+        ) %>%
+        hc_size(height = 500) %>%
+        hc_exporting(enabled = TRUE)
+    })
+
+  return(plots)
+}
 
 # Generate plots
-plots <- generate_plots(excluded_dat30, exclusion = T)
+plots <- generate_plots_old(excluded_dat30, exclusion = T)
 
 if(length(plots)!=0){
 
@@ -459,7 +598,7 @@ tags$div(class = "container", do.call(tags$div, rows))
 ```{r echo=FALSE, results='asis'}
 
 # Generate plots
-plots <- generate_plots(excluded_dat7, exclusion = T)
+plots <- generate_plots_old(excluded_dat7, exclusion = T)
 
 if(length(plots)!=0){
 

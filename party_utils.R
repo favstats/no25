@@ -75,7 +75,7 @@ election_dat7 <- readRDS("../data/election_dat7.rds")  %>%
 
 
 
-currency_symbol <- "NOK"
+currency_symbol <- "kr"
 
 # color_dat <- election_dat30 %>% 
 #   mutate(party = entities.name) %>% 
