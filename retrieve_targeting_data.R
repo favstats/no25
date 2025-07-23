@@ -805,7 +805,11 @@ get_complete_targeting_db <- function(country,
   round <- 1
   prev_missing <- 0
   repeat {
+<<<<<<< HEAD
     missing <- setdiff(last7$page_id, db$page_id)
+=======
+    missing <- setdiff(all_dat$page_id, db$page_id)
+>>>>>>> 4461e8063350dd8b93e8aedd7548be5564cff2a3
     if (length(missing) == 0) break
     
     if (round > max_rounds) {
