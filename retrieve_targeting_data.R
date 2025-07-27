@@ -849,8 +849,14 @@ get_complete_targeting_db <- function(country,
 # thecntry <- "NO"
 # new_ds   <- "2025-07-11"
 
-da7  <- get_complete_targeting_db(thecntry, "last_7_days",  new_ds)
-da30 <- get_complete_targeting_db(thecntry, "last_30_days", new_ds)
+if(Sys.info()[["user"]]=="favstats"){
+  the_rounds <- 1
+} else {
+  the_rounds <- 5
+}
+
+da7  <- get_complete_targeting_db(thecntry, "last_7_days",  new_ds, max_rounds = the_rounds)
+da30 <- get_complete_targeting_db(thecntry, "last_30_days", new_ds, max_rounds = the_rounds)
 
 saveRDS(da30, "data/election_dat30.rds")
 saveRDS(da7,  "data/election_dat7.rds")
